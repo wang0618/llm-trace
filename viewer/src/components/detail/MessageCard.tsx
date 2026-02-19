@@ -1,8 +1,12 @@
+import { useState, useMemo } from 'react';
 import type { Message } from '../../types';
 
 interface MessageCardProps {
   message: Message;
 }
+
+const MAX_LINES = 5;
+const LINE_HEIGHT = 1.5; // matches leading-relaxed
 
 const roleConfig: Record<Message['role'], { label: string; colorClass: string; bgClass: string }> = {
   system: {
@@ -34,6 +38,14 @@ const roleConfig: Record<Message['role'], { label: string; colorClass: string; b
 
 export function MessageCard({ message }: MessageCardProps) {
   const config = roleConfig[message.role];
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const contentLineCount = useMemo(() => {
+    if (!message.content) return 0;
+    return message.content.split('\n').length;
+  }, [message.content]);
+
+  const shouldTruncate = contentLineCount > MAX_LINES;
 
   return (
     <div className={`rounded-lg border ${config.bgClass} overflow-hidden`}>
@@ -47,8 +59,27 @@ export function MessageCard({ message }: MessageCardProps) {
       {/* Content */}
       <div className="px-4 py-3">
         {message.content && (
-          <div className="text-sm text-text-primary whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
+          <div className="relative">
+            <div
+              className={`text-sm text-text-primary whitespace-pre-wrap break-words leading-relaxed ${
+                shouldTruncate && !isExpanded ? 'overflow-hidden' : ''
+              }`}
+              style={
+                shouldTruncate && !isExpanded
+                  ? { maxHeight: `${MAX_LINES * LINE_HEIGHT}em` }
+                  : undefined
+              }
+            >
+              {message.content}
+            </div>
+            {shouldTruncate && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="mt-2 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
+              >
+                {isExpanded ? '收起' : `展开 (${contentLineCount} 行)`}
+              </button>
+            )}
           </div>
         )}
 
