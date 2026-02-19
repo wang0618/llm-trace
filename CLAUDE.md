@@ -11,12 +11,15 @@ uv run llm-trace serve --port 8080 --output ./traces/trace.jsonl
 # Preprocess traces for visualization
 uv run llm-trace cook ./traces/trace.jsonl -o ./viewer/public/data.json
 
-# Install dependencies
+# Install Python dependencies
 uv sync
 
-# Run with ruff
+# Lint/format Python
 uv run ruff check llm_trace/
 uv run ruff format llm_trace/
+
+# Run viewer (React)
+cd viewer && npm install && npm run dev
 ```
 
 ## Directory Structure
@@ -29,6 +32,9 @@ llm-trace/
 │   ├── proxy.py         # Proxy server (Starlette + httpx)
 │   ├── storage.py       # JSONL append-only storage
 │   └── models.py        # TraceRecord dataclass
+├── viewer/              # React trace viewer (Vite + Tailwind)
+│   ├── src/components/  # React components
+│   └── public/data.json # Cooked trace data (output of `cook`)
 ├── docs/                # Design documentation
 ├── traces/              # Default output directory
 └── pyproject.toml       # Project config
@@ -41,6 +47,7 @@ llm-trace/
 - **Server**: uvicorn
 - **Storage**: JSONL (append-only, no database)
 - **Python**: 3.10+
+- **Viewer**: React 19 + Vite + Tailwind CSS v4
 
 ## Key Concepts
 
