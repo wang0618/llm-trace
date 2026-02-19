@@ -90,6 +90,7 @@ export function DiffView({ diff, expandedMessageId, onToggleExpand }: DiffViewPr
           return (
             <UnchangedGroup
               key={`unchanged-${groupIdx}`}
+              groupId={groupIdx}
               messages={messages}
               expandedMessageId={expandedMessageId}
               onToggleExpand={onToggleExpand}
