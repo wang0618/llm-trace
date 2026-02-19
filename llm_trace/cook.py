@@ -91,22 +91,29 @@ def _map_role(role: str, tool_calls: list[dict] | None) -> str:
 
 
 def _parse_tool_calls(tool_calls: list[dict] | None) -> list[dict] | None:
-    """Parse tool_calls, decoding JSON arguments strings to dicts."""
+    """Parse tool_calls, flattening to {name, arguments} format for frontend."""
     if not tool_calls:
         return None
 
     parsed = []
     for tc in tool_calls:
-        parsed_tc = dict(tc)
-        if "function" in parsed_tc and isinstance(parsed_tc["function"], dict):
-            func = dict(parsed_tc["function"])
-            if "arguments" in func and isinstance(func["arguments"], str):
+        # Extract function name and arguments from OpenAI format
+        if "function" in tc and isinstance(tc["function"], dict):
+            func = tc["function"]
+            name = func.get("name", "")
+            arguments = func.get("arguments", {})
+
+            # Decode JSON arguments string to dict
+            if isinstance(arguments, str):
                 try:
-                    func["arguments"] = json.loads(func["arguments"])
+                    arguments = json.loads(arguments)
                 except json.JSONDecodeError:
-                    pass  # Keep as string if not valid JSON
-            parsed_tc["function"] = func
-        parsed.append(parsed_tc)
+                    arguments = {"raw": arguments}  # Keep as raw if not valid JSON
+
+            parsed.append({"name": name, "arguments": arguments})
+        else:
+            # Already flat format or unknown structure
+            parsed.append(tc)
     return parsed
 
 
