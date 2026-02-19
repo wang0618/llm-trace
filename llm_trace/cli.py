@@ -5,8 +5,30 @@ import logging
 
 import uvicorn
 
+from .cook import cook_traces
 from .proxy import DEFAULT_TARGET_URL, create_app
 from .storage import JSONLStorage
+
+
+def run_serve(args: argparse.Namespace) -> None:
+    """Run the proxy server."""
+    # Create storage and app
+    storage = JSONLStorage(args.output)
+    app = create_app(args.target, storage)
+
+    print("Starting LLM Trace proxy server...")
+    print(f"  Listening on: http://{args.host}:{args.port}")
+    print(f"  Target API:   {args.target}")
+    print(f"  Output file:  {args.output}")
+    print()
+
+    # Run the server
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def run_cook(args: argparse.Namespace) -> None:
+    """Run the trace preprocessing."""
+    cook_traces(args.input, args.output)
 
 
 def main():
@@ -20,45 +42,61 @@ def main():
     parser = argparse.ArgumentParser(
         description="LLM Trace - Proxy server for tracing LLM requests"
     )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    # serve subcommand (original functionality)
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the proxy server to trace LLM requests"
+    )
+    serve_parser.add_argument(
         "--port",
         type=int,
         default=8080,
         help="Port to listen on (default: 8080)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--host",
         type=str,
         default="127.0.0.1",
         help="Host to bind to (default: 127.0.0.1)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--output",
         type=str,
         default="./traces/trace.jsonl",
         help="Output JSONL file path (default: ./traces/trace.jsonl)",
     )
-    parser.add_argument(
+    serve_parser.add_argument(
         "--target",
         type=str,
         default=DEFAULT_TARGET_URL,
         help=f"Target API URL (default: {DEFAULT_TARGET_URL})",
     )
 
+    # cook subcommand (new functionality)
+    cook_parser = subparsers.add_parser(
+        "cook", help="Preprocess JSONL traces to visualization-ready JSON"
+    )
+    cook_parser.add_argument(
+        "input",
+        help="Input JSONL/JSON file path",
+    )
+    cook_parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default="./output.json",
+        help="Output JSON file path (default: ./output.json)",
+    )
+
     args = parser.parse_args()
 
-    # Create storage and app
-    storage = JSONLStorage(args.output)
-    app = create_app(args.target, storage)
-
-    print("Starting LLM Trace proxy server...")
-    print(f"  Listening on: http://{args.host}:{args.port}")
-    print(f"  Target API:   {args.target}")
-    print(f"  Output file:  {args.output}")
-    print()
-
-    # Run the server
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    if args.command == "serve":
+        run_serve(args)
+    elif args.command == "cook":
+        run_cook(args)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":

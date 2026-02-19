@@ -5,8 +5,11 @@ A tool for tracing LLM requests - intercepts API calls and saves them for debugg
 ## Quick Reference
 
 ```bash
-# Development
-uv run llm-trace --port 8080 --output ./traces/trace.jsonl
+# Start proxy server
+uv run llm-trace serve --port 8080 --output ./traces/trace.jsonl
+
+# Preprocess traces for visualization
+uv run llm-trace cook ./traces/trace.jsonl -o ./viewer/public/data.json
 
 # Install dependencies
 uv sync
@@ -21,7 +24,8 @@ uv run ruff format llm_trace/
 ```
 llm-trace/
 ├── llm_trace/           # Main package
-│   ├── cli.py           # CLI entry point (argparse)
+│   ├── cli.py           # CLI entry point (subcommands: serve, cook)
+│   ├── cook.py          # Trace preprocessing for visualization
 │   ├── proxy.py         # Proxy server (Starlette + httpx)
 │   ├── storage.py       # JSONL append-only storage
 │   └── models.py        # TraceRecord dataclass
@@ -58,6 +62,20 @@ llm-trace/
 Each line in JSONL:
 ```json
 {"id": "uuid", "timestamp": "ISO", "request": {...}, "response": {...}, "duration_ms": 1200}
+```
+
+### Cook (Preprocessing)
+
+The `cook` command transforms raw JSONL traces into visualization-ready JSON:
+
+- **Message deduplication**: Same messages get reused across requests via hash-based IDs
+- **Tool deduplication**: Tool definitions are deduplicated by (name, description, parameters)
+- **Role mapping**: `assistant` with tool_calls → `tool_use`, `tool` → `tool_result`
+- **Request chaining**: Each request has `parent_id` pointing to the previous request
+
+Output structure:
+```json
+{"messages": [...], "tools": [...], "requests": [...]}
 ```
 
 ## Conventions
