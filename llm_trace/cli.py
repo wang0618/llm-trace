@@ -1,6 +1,7 @@
 """Command-line interface for LLM Trace."""
 
 import argparse
+import logging
 import sys
 
 import uvicorn
@@ -11,6 +12,12 @@ from .storage import JSONLStorage
 
 def main():
     """Main entry point for the CLI."""
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
     parser = argparse.ArgumentParser(
         description="LLM Trace - Proxy server for tracing LLM requests"
     )

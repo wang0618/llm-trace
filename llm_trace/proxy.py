@@ -4,11 +4,12 @@ import json
 import time
 from collections.abc import AsyncIterator
 
+import logging
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse, Response
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 
 from .models import TraceRecord
 from .storage import JSONLStorage
@@ -29,29 +30,36 @@ class LLMProxy:
         """Close the HTTP client."""
         await self.client.aclose()
 
-    async def proxy_chat_completions(self, request: Request) -> Response:
-        """Proxy the chat completions endpoint."""
+    async def proxy_request(self, request: Request) -> Response:
+        """Proxy any request to the target API."""
         start_time = time.time()
+
+        # Get the full path from request
+        path = request.url.path
+        query_string = request.url.query
+        upstream_url = f"{self.target_url}{path}"
+        if query_string:
+            upstream_url = f"{upstream_url}?{query_string}"
 
         # Read and parse request body
         body = await request.body()
-        try:
-            request_data = json.loads(body)
-        except json.JSONDecodeError:
-            return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+        request_data = None
+        if body:
+            try:
+                request_data = json.loads(body)
+            except json.JSONDecodeError:
+                # Not JSON, forward as raw body
+                pass
 
-        # Build headers for upstream request
+        # Build headers for upstream request (forward most headers)
         headers = {}
-        if "authorization" in request.headers:
-            headers["Authorization"] = request.headers["authorization"]
-        if "content-type" in request.headers:
-            headers["Content-Type"] = request.headers["content-type"]
+        for key, value in request.headers.items():
+            # Skip hop-by-hop headers
+            if key.lower() not in ("host", "connection", "keep-alive", "transfer-encoding"):
+                headers[key] = value
 
-        # Determine if streaming
-        is_stream = request_data.get("stream", False)
-
-        # Build upstream URL
-        upstream_url = f"{self.target_url}/v1/chat/completions"
+        # Determine if streaming (only for JSON requests with stream=true)
+        is_stream = request_data.get("stream", False) if isinstance(request_data, dict) else False
 
         if is_stream:
             return await self._handle_streaming_request(
@@ -59,36 +67,62 @@ class LLMProxy:
             )
         else:
             return await self._handle_normal_request(
-                upstream_url, headers, request_data, start_time
+                request.method, upstream_url, headers, request_data, body, start_time
             )
 
     async def _handle_normal_request(
         self,
+        method: str,
         url: str,
         headers: dict,
-        request_data: dict,
+        request_data: dict | None,
+        raw_body: bytes,
         start_time: float,
     ) -> Response:
         """Handle non-streaming request."""
-        record = TraceRecord(request=request_data)
+        # Only trace POST requests with JSON body (likely LLM calls)
+        should_trace = method == "POST" and request_data is not None
+
+        record = TraceRecord(request=request_data) if should_trace else None
+
+        if record:
+            logging.info(f"Record non-stream LLM Call")
 
         try:
-            response = await self.client.post(url, headers=headers, json=request_data)
+            # Use JSON body if available, otherwise raw body
+            if request_data is not None:
+                response = await self.client.request(method, url, headers=headers, json=request_data)
+            else:
+                response = await self.client.request(method, url, headers=headers, content=raw_body)
+
             duration_ms = int((time.time() - start_time) * 1000)
 
-            response_data = response.json()
-            record.response = response_data
-            record.duration_ms = duration_ms
-
-            self.storage.append(record)
-
-            return JSONResponse(response_data, status_code=response.status_code)
+            # Try to parse response as JSON
+            try:
+                response_data = response.json()
+                if record:
+                    record.response = response_data
+                    record.duration_ms = duration_ms
+                    self.storage.append(record)
+                return JSONResponse(response_data, status_code=response.status_code)
+            except json.JSONDecodeError:
+                # Return raw response
+                if record:
+                    record.response = {"raw": response.text}
+                    record.duration_ms = duration_ms
+                    self.storage.append(record)
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                )
 
         except httpx.RequestError as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            record.error = str(e)
-            record.duration_ms = duration_ms
-            self.storage.append(record)
+            if record:
+                record.error = str(e)
+                record.duration_ms = duration_ms
+                self.storage.append(record)
 
             return JSONResponse(
                 {"error": {"message": str(e), "type": "proxy_error"}},
@@ -104,6 +138,8 @@ class LLMProxy:
     ) -> Response:
         """Handle streaming request."""
         record = TraceRecord(request=request_data)
+
+        logging.info(f"Record stream LLM Call")
 
         async def generate() -> AsyncIterator[bytes]:
             chunks: list[str] = []
@@ -181,8 +217,8 @@ def create_app(target_url: str, storage: JSONLStorage) -> Starlette:
     """Create the Starlette application."""
     proxy = LLMProxy(target_url, storage)
 
-    async def chat_completions(request: Request) -> Response:
-        return await proxy.proxy_chat_completions(request)
+    async def proxy_all(request: Request) -> Response:
+        return await proxy.proxy_request(request)
 
     async def health(request: Request) -> Response:
         return JSONResponse({"status": "ok"})
@@ -192,8 +228,9 @@ def create_app(target_url: str, storage: JSONLStorage) -> Starlette:
 
     app = Starlette(
         routes=[
-            Route("/v1/chat/completions", chat_completions, methods=["POST"]),
             Route("/health", health, methods=["GET"]),
+            # Catch-all route for all other paths
+            Route("/{path:path}", proxy_all, methods=["GET", "POST", "PUT", "DELETE", "PATCH"]),
         ],
         on_shutdown=[on_shutdown],
     )
