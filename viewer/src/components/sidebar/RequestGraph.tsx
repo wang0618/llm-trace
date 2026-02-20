@@ -17,6 +17,7 @@ interface FlatNode {
   column: number;
   parentId: string | null;
   isNewBranch: boolean;
+  isIsolated: boolean; // Single-node tree (no parent, no children)
 }
 
 // ─── Column Assignment (git-style) ────────────────────────────────────────────
@@ -35,6 +36,7 @@ function assignCols(
     column: col,
     parentId,
     isNewBranch,
+    isIsolated: false, // Part of a multi-node tree
   });
 
   if (node.children.length > 0) {
@@ -51,11 +53,33 @@ function assignCols(
 
 function buildFlatNodes(roots: RequestTreeNode[]): FlatNode[] {
   const out: FlatNode[] = [];
-  const counter = { value: 1 };
-  roots.forEach((root, i) => {
-    const col = i === 0 ? 0 : counter.value++;
+
+  // Separate single-node trees (roots with no children) from multi-node trees
+  const singleNodeRoots = roots.filter((root) => root.children.length === 0);
+  const multiNodeRoots = roots.filter((root) => root.children.length > 0);
+
+  // All single-node trees go to column 0 (consolidated)
+  for (const root of singleNodeRoots) {
+    out.push({
+      id: root.request.id,
+      request: root.request,
+      column: 0,
+      parentId: null,
+      isNewBranch: false,
+      isIsolated: true, // No connections for isolated nodes
+    });
+  }
+
+  // Multi-node trees get their own columns
+  // Start from column 1 if there are single-node trees, otherwise from column 0
+  const startCol = singleNodeRoots.length > 0 ? 1 : 0;
+  const counter = { value: startCol + 1 };
+
+  multiNodeRoots.forEach((root, i) => {
+    const col = i === 0 ? startCol : counter.value++;
     assignCols(root, col, i > 0, counter, null, out);
   });
+
   // Sort by timestamp for strict chronological order
   out.sort((a, b) => a.request.timestamp - b.request.timestamp);
   return out;
@@ -85,6 +109,9 @@ function buildLaneSpans(flat: FlatNode[]): Map<number, LaneSpan> {
   const spans = new Map<number, LaneSpan>();
 
   flat.forEach((node, rowIdx) => {
+    // Skip isolated nodes - they don't contribute to lane spans
+    if (node.isIsolated) return;
+
     const span = spans.get(node.column);
     const nodeY = rowY(rowIdx);
     const endY = span ? Math.max(span.endY, nodeY) : nodeY;
