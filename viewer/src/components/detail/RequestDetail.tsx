@@ -100,7 +100,7 @@ export function RequestDetail({ request, getMessage, getTool, getRequest }: Requ
               onToggleExpand={handleToggleExpand}
             />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 pb-6">
               {tools.length === 0 ? (
                 <div className="text-center text-text-muted py-8">
                   No tools in this request

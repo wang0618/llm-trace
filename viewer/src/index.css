@@ -46,7 +46,7 @@
   --color-border-muted: #eaeef2;
   --color-border-accent: #0969da;
   --color-text-primary: #1f2328;
-  --color-text-secondary: #656d76;
+  --color-text-secondary: #3b3d40;
   --color-text-muted: #8c959f;
   --color-role-system: #6e7781;
   --color-role-user: #0969da;
@@ -94,7 +94,9 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -133,7 +135,8 @@ body {
 }
 
 /* Code blocks */
-pre, code {
+pre,
+code {
   font-family: var(--font-mono);
 }
 
