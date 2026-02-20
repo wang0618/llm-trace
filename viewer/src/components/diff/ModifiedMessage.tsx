@@ -14,11 +14,6 @@ export function ModifiedMessage({ oldMessage, newMessage, expandedId, onToggleEx
       {/* Orange/Yellow left border indicator */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-full" />
 
-      {/* Modified icon */}
-      <div className="absolute left-1.5 top-3 w-5 h-5 flex items-center justify-center text-amber-500 font-bold text-xs">
-        ~
-      </div>
-
       <div className="space-y-2">
         {/* Old message */}
         <div className="relative opacity-60">
