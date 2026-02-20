@@ -679,7 +679,7 @@ class TraceCooker:
             elif block_type == "thinking":
                 thinking_text = block.get("thinking", "")
                 if thinking_text:
-                    text_parts.insert(0, f"thinking:\n{thinking_text}\n")
+                    text_parts.insert(0, f"thinking:\n{thinking_text}\n\n")
 
             elif block_type == "tool_use":
                 tool_calls.append(
