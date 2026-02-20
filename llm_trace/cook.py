@@ -5,7 +5,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+ApiFormat = Literal["auto", "openai", "claude"]
 
 
 @dataclass
@@ -126,6 +128,34 @@ def _iso_to_unix_ms(iso_str: str) -> int:
         return int(dt.timestamp() * 1000)
     except ValueError:
         return 0
+
+
+def _detect_api_format(record: dict) -> str:
+    """Detect whether record is Claude or OpenAI format."""
+    request = record.get("request", {})
+
+    # Claude indicators: system field is a list of blocks
+    if "system" in request and isinstance(request.get("system"), list):
+        return "claude"
+
+    # Claude tools have input_schema instead of function.parameters
+    tools = request.get("tools", [])
+    if tools and isinstance(tools[0], dict) and "input_schema" in tools[0]:
+        return "claude"
+
+    # Check for Claude content block types in messages
+    for msg in request.get("messages", []):
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") in (
+                    "tool_use",
+                    "tool_result",
+                    "thinking",
+                ):
+                    return "claude"
+
+    return "openai"
 
 
 class TraceCooker:
@@ -272,8 +302,241 @@ class TraceCooker:
                 tool_ids.append(tool_id)
         return tool_ids
 
-    def _process_record(self, record: dict) -> CookedRequest:
+    # ========== Claude API format processing methods ==========
+
+    def _process_claude_system(self, system: list[dict] | None) -> list[str]:
+        """Process Claude's system field into system message IDs."""
+        if not system:
+            return []
+
+        msg_ids = []
+        for block in system:
+            if isinstance(block, dict) and block.get("type") == "text":
+                content = block.get("text", "")
+                msg_id = self._get_or_create_message("system", content, None)
+                msg_ids.append(msg_id)
+            elif isinstance(block, str):
+                msg_id = self._get_or_create_message("system", block, None)
+                msg_ids.append(msg_id)
+        return msg_ids
+
+    def _process_claude_request_messages(
+        self, messages: list[dict], system: list[dict] | None
+    ) -> list[str]:
+        """Process Claude request messages and return list of message IDs."""
+        msg_ids = []
+
+        # First add system messages
+        msg_ids.extend(self._process_claude_system(system))
+
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content")
+
+            # Handle content as string (simple case)
+            if isinstance(content, str):
+                msg_id = self._get_or_create_message(role, content, None)
+                msg_ids.append(msg_id)
+                continue
+
+            # Handle content as array of blocks
+            if isinstance(content, list):
+                msg_ids.extend(self._process_claude_content_blocks(role, content))
+
+        return msg_ids
+
+    def _process_claude_content_blocks(self, role: str, blocks: list[dict]) -> list[str]:
+        """Process Claude content blocks and return message IDs.
+
+        Each text block becomes a separate message (consistent with OpenAI handling).
+        Thinking blocks are prefixed to the next text block.
+        Tool use blocks are collected into a single tool_use message.
+        Tool result blocks become separate tool_result messages.
+        """
+        msg_ids = []
+        tool_calls = []
+        pending_thinking = ""
+
+        for block in blocks:
+            if not isinstance(block, dict):
+                # Plain string - create message
+                content = str(block)
+                if pending_thinking:
+                    content = f"thinking:\n{pending_thinking}\n\n{content}"
+                    pending_thinking = ""
+                msg_id = self._get_or_create_message(role, content, None)
+                msg_ids.append(msg_id)
+                continue
+
+            block_type = block.get("type", "")
+
+            if block_type == "text":
+                # Each text block becomes a separate message
+                content = block.get("text", "")
+                if pending_thinking:
+                    content = f"thinking:\n{pending_thinking}\n\n{content}"
+                    pending_thinking = ""
+                msg_id = self._get_or_create_message(role, content, None)
+                msg_ids.append(msg_id)
+
+            elif block_type == "thinking":
+                # Buffer thinking to prepend to next text block
+                pending_thinking = block.get("thinking", "")
+
+            elif block_type == "tool_use":
+                # Collect tool calls
+                tool_calls.append(
+                    {
+                        "name": block.get("name", ""),
+                        "arguments": block.get("input", {}),
+                    }
+                )
+
+            elif block_type == "tool_result":
+                # Create separate message with tool_result role
+                result_content = block.get("content", "")
+                if isinstance(result_content, list):
+                    # Handle content as array (e.g., multiple text blocks)
+                    result_content = "\n".join(
+                        b.get("text", str(b)) if isinstance(b, dict) else str(b)
+                        for b in result_content
+                    )
+                msg_id = self._get_or_create_message("tool_result", str(result_content), None)
+                msg_ids.append(msg_id)
+
+            elif block_type == "image":
+                msg_id = self._get_or_create_message(role, "[image]", None)
+                msg_ids.append(msg_id)
+
+            else:
+                # Unknown block type - serialize as JSON
+                content = json.dumps(block, ensure_ascii=False)
+                msg_id = self._get_or_create_message(role, content, None)
+                msg_ids.append(msg_id)
+
+        # Create tool_use message if there are tool calls
+        if tool_calls:
+            # If there's pending thinking, include it
+            content = ""
+            if pending_thinking:
+                content = f"thinking:\n{pending_thinking}"
+                pending_thinking = ""
+            msg_id = self._get_or_create_message("tool_use", content, tool_calls)
+            msg_ids.append(msg_id)
+        elif pending_thinking:
+            # Orphan thinking block (no following text) - create standalone message
+            msg_id = self._get_or_create_message(role, f"thinking:\n{pending_thinking}", None)
+            msg_ids.append(msg_id)
+
+        return msg_ids
+
+    def _process_claude_response(self, response: dict | None, error: str | None) -> str:
+        """Process Claude response and return message ID."""
+        if error:
+            return self._get_or_create_message("assistant", f"Error: {error}", None)
+
+        if not response:
+            return self._get_or_create_message("assistant", "", None)
+
+        content = response.get("content", [])
+        if not content:
+            return self._get_or_create_message("assistant", "", None)
+
+        text_parts = []
+        tool_calls = []
+
+        for block in content:
+            if not isinstance(block, dict):
+                text_parts.append(str(block))
+                continue
+
+            block_type = block.get("type", "")
+
+            if block_type == "text":
+                text_parts.append(block.get("text", ""))
+
+            elif block_type == "thinking":
+                thinking_text = block.get("thinking", "")
+                if thinking_text:
+                    text_parts.insert(0, f"thinking:\n{thinking_text}\n")
+
+            elif block_type == "tool_use":
+                tool_calls.append(
+                    {
+                        "name": block.get("name", ""),
+                        "arguments": block.get("input", {}),
+                    }
+                )
+
+        combined_text = "".join(text_parts).strip()
+        return self._get_or_create_message(
+            "assistant", combined_text, tool_calls if tool_calls else None
+        )
+
+    def _process_claude_tools(self, tools: list[dict] | None) -> list[str]:
+        """Process Claude tool definitions and return list of tool IDs."""
+        if not tools:
+            return []
+
+        tool_ids = []
+        for tool in tools:
+            name = tool.get("name", "")
+            description = tool.get("description", "")
+            # Claude uses input_schema instead of parameters
+            parameters = tool.get("input_schema", {})
+
+            tool_id = self._get_or_create_tool(name, description, parameters)
+            tool_ids.append(tool_id)
+        return tool_ids
+
+    def _process_record_claude(self, record: dict) -> CookedRequest:
+        """Process a single Claude API trace record."""
+        request = record.get("request", {})
+        response = record.get("response")
+        error = record.get("error")
+
+        # Process request messages (with system)
+        messages = request.get("messages", [])
+        system = request.get("system")
+        request_msg_ids = self._process_claude_request_messages(messages, system)
+
+        # Process response message
+        response_msg_id = self._process_claude_response(response, error)
+
+        # Process tools
+        tools = request.get("tools", [])
+        tool_ids = self._process_claude_tools(tools)
+
+        # Create request record
+        record_id = record.get("id", "")
+        timestamp = _iso_to_unix_ms(record.get("timestamp", ""))
+        model = request.get("model", "")
+        duration_ms = record.get("duration_ms", 0)
+
+        return CookedRequest(
+            id=record_id,
+            parent_id=None,
+            timestamp=timestamp,
+            request_messages=request_msg_ids,
+            response_message=response_msg_id,
+            model=model,
+            tools=tool_ids,
+            duration_ms=duration_ms,
+        )
+
+    def _process_record(self, record: dict, api_format: str = "auto") -> CookedRequest:
         """Process a single trace record, returns CookedRequest (parent_id not set)."""
+        # Determine format
+        if api_format == "auto":
+            detected_format = _detect_api_format(record)
+        else:
+            detected_format = api_format
+
+        # Dispatch to format-specific handler
+        if detected_format == "claude":
+            return self._process_record_claude(record)
+
+        # OpenAI format (default)
         request = record.get("request", {})
         response = record.get("response")
         error = record.get("error")
@@ -306,11 +569,11 @@ class TraceCooker:
             duration_ms=duration_ms,
         )
 
-    def cook(self, records: list[dict]) -> CookedOutput:
+    def cook(self, records: list[dict], api_format: str = "auto") -> CookedOutput:
         """Process all records and return deduplicated output."""
         # Step 1: Process all records
         for record in records:
-            cooked_request = self._process_record(record)
+            cooked_request = self._process_record(record, api_format)
             self.requests.append(cooked_request)
 
         # Step 2: Sort by timestamp
@@ -440,8 +703,14 @@ class TraceCooker:
         return dp[m][n]
 
 
-def cook_traces(input_path: str, output_path: str) -> None:
-    """Main entry point: read JSONL/JSON traces and write cooked JSON output."""
+def cook_traces(input_path: str, output_path: str, api_format: str = "auto") -> None:
+    """Main entry point: read JSONL/JSON traces and write cooked JSON output.
+
+    Args:
+        input_path: Path to input JSONL/JSON trace file
+        output_path: Path to output JSON file
+        api_format: API format of input traces: "auto", "openai", or "claude"
+    """
     input_file = Path(input_path)
     output_file = Path(output_path)
 
@@ -465,7 +734,7 @@ def cook_traces(input_path: str, output_path: str) -> None:
 
     # Process records
     cooker = TraceCooker()
-    output = cooker.cook(records)
+    output = cooker.cook(records, api_format)
 
     # Write output
     output_file.parent.mkdir(parents=True, exist_ok=True)

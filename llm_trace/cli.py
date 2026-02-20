@@ -28,7 +28,7 @@ def run_serve(args: argparse.Namespace) -> None:
 
 def run_cook(args: argparse.Namespace) -> None:
     """Run the trace preprocessing."""
-    cook_traces(args.input, args.output)
+    cook_traces(args.input, args.output, args.format)
 
 
 def main():
@@ -87,6 +87,13 @@ def main():
         type=str,
         default="./output.json",
         help="Output JSON file path (default: ./output.json)",
+    )
+    cook_parser.add_argument(
+        "--format",
+        type=str,
+        choices=["auto", "openai", "claude"],
+        default="auto",
+        help="API format of input traces: auto (default), openai, or claude",
     )
 
     args = parser.parse_args()
