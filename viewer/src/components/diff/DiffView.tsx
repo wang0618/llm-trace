@@ -55,7 +55,7 @@ export function DiffView({ diff, expandedMessageId, onToggleExpand }: DiffViewPr
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 pb-6">
       {/* Summary badge */}
       <div className="flex items-center gap-2 text-xs text-text-muted mb-4">
         {diff.summary.added > 0 && (

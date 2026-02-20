@@ -6,7 +6,7 @@ interface MessageCardProps {
   onToggleExpand?: () => void;
 }
 
-export const MESSAGE_MAX_LINES = 5;
+export const MESSAGE_MAX_LINES = 8;
 export const MESSAGE_MAX_CHARS = 500;
 const LINE_HEIGHT = 1.5; // matches leading-relaxed
 
@@ -84,8 +84,8 @@ export function MessageCard({ message, isExpanded = false, onToggleExpand }: Mes
                 shouldTruncate && !isExpanded
                   ? {
                       maxHeight: `${MESSAGE_MAX_LINES * LINE_HEIGHT}em`,
-                      maskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)',
-                      WebkitMaskImage: 'linear-gradient(to bottom, black 50%, transparent 100%)',
+                      maskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
+                      WebkitMaskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
                     }
                   : undefined
               }
