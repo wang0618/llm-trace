@@ -33,7 +33,9 @@ llm-trace/
 │   ├── storage.py       # JSONL append-only storage
 │   └── models.py        # TraceRecord dataclass
 ├── viewer/              # React trace viewer (Vite + Tailwind)
-│   ├── src/components/  # React components
+│   ├── src/components/  # React components (detail/, sidebar/, diff/, layout/)
+│   ├── src/hooks/       # Custom hooks (useTraceData, useDiff, useTheme)
+│   ├── src/utils/       # Utilities (diff.ts, treeLayout.ts)
 │   └── public/data.json # Cooked trace data (output of `cook`)
 ├── docs/                # Design documentation
 ├── traces/              # Default output directory
@@ -78,12 +80,25 @@ The `cook` command transforms raw JSONL traces into visualization-ready JSON:
 - **Message deduplication**: Same messages get reused across requests via hash-based IDs
 - **Tool deduplication**: Tool definitions are deduplicated by (name, description, parameters)
 - **Role mapping**: `assistant` with tool_calls → `tool_use`, `tool` → `tool_result`
-- **Request chaining**: Each request has `parent_id` pointing to the previous request
+- **Request dependency analysis**: Builds a dependency forest (not linear chain) by:
+  - Using prefix matching and Levenshtein distance for parent detection
+  - Filtering by model (no cross-model dependencies)
+  - Applying tool difference penalties to match scores
+  - Creating new roots when match score is below threshold
 
 Output structure:
 ```json
 {"messages": [...], "tools": [...], "requests": [...]}
 ```
+
+See `docs/req-dependency.md` for algorithm details.
+
+## Viewer Features
+
+- **Request graph**: Visual tree/forest of request dependencies in sidebar
+- **Message diff view**: Compare messages between consecutive requests
+- **Dark/light theme**: Toggle via ThemeProvider
+- **Collapsible content**: Messages and tool descriptions collapse for readability
 
 ## Conventions
 

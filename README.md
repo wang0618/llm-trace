@@ -1,68 +1,120 @@
 # LLM Trace
 
-一个用于追踪 LLM 请求的工具，帮助调试和分析 LLM 应用的行为。
+A lightweight tool for tracing LLM API requests — intercept, record, and visualize your LLM application's behavior.
 
-## 功能概述
+## Features
 
-### 1. 本地代理服务器 (Proxy)
+- **Transparent Proxy** — Drop-in HTTP proxy that captures all LLM API traffic without code changes
+- **Streaming Support** — Full support for SSE (Server-Sent Events) streaming responses
+- **Request Visualization** — Interactive web viewer to explore request history as a dependency tree
+- **Conversation Branching** — Automatically detects conversation forks (e.g., rewinds) and displays LLM requests as a graph
+- **Message Diff View** — Compare messages between consecutive requests to see what changed
+- **OpenAI Compatible** — Works with any OpenAI-compatible API
 
-提供一个本地 HTTP 代理，拦截和记录对 LLM API 的请求：
-
-- 支持 OpenAI 兼容 API
-- 支持流式输出 (SSE)
-- 支持普通调用
-- 请求和响应保存为 JSONL 格式
-
-### 2. 可视化工具 (TODO)
-
-将保存的请求历史可视化为树形结构：
-
-- 每个节点表示一次 LLM 请求
-- 节点之间的边表示依赖关系：子节点的请求是在父节点基础上 append 了更多内容
-- 线性对话显示为一条线
-- 对话回退（如 rewind）会产生分叉
-- 多条不相关对话显示为森林结构
-- 点击节点可查看请求和响应详情
-- 默认显示增量内容，支持查看完整请求
-
-## 设计决策
-
-### 存储格式：JSONL
-
-选择 JSONL 而非数据库的原因：
-
-- **简单** - 无需依赖，append-only 写入
-- **可读** - 直接用 `cat` / `jq` 查看和处理
-- **流式友好** - 每条记录独立，不怕写到一半崩溃
-- **版本控制友好** - 可以直接 git diff
-
-### 树结构构建
-
-通过 messages 内容前缀匹配来确定父子关系，在可视化时实时计算，无需在存储时记录 parent_id。
-
-## 使用方式
-
-启动 proxy：
+## Installation
 
 ```bash
-python -m llm_trace --port 8080 --output ./traces/trace.jsonl --target https://api.openai.com
+# Clone the repository
+git clone https://github.com/anthropics/llm-trace.git
+cd llm-trace
+
+# Install Python dependencies
+uv sync
+
+# Install viewer dependencies
+cd viewer && npm install
 ```
 
-客户端修改 base_url 即可：
+## Quick Start
+
+### 1. Start the Proxy
+
+```bash
+uv run llm-trace serve --port 8080 --output ./traces/trace.jsonl
+```
+
+### 2. Point Your Client to the Proxy
 
 ```python
 from openai import OpenAI
 
-# 原来
+# Before
 client = OpenAI()
 
-# 改成
+# After — just change the base_url
 client = OpenAI(base_url="http://localhost:8080/v1")
 ```
 
-## 技术栈
+All requests will be transparently forwarded to the original API and recorded to the trace file.
 
-- Python
-- httpx - HTTP 客户端
-- starlette - Web 框架
-- uvicorn - ASGI 服务器
+### 3. Visualize the Traces
+
+```bash
+# Preprocess traces for the viewer
+uv run llm-trace cook ./traces/trace.jsonl -o ./viewer/public/data.json
+
+# Start the viewer
+cd viewer && npm run dev
+```
+
+Open http://localhost:5173 to explore your traces.
+
+## How It Works
+
+```
+┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+│   Client    │ ──── │  LLM Trace  │ ──── │   LLM API   │
+│  (your app) │      │   (proxy)   │      │  (OpenAI)   │
+└─────────────┘      └──────┬──────┘      └─────────────┘
+                            │
+                            ▼
+                     ┌─────────────┐
+                     │ trace.jsonl │
+                     └─────────────┘
+```
+
+1. Your application sends requests to the local proxy
+2. The proxy forwards requests to the target LLM API
+3. Responses (including streaming) are passed back to your app
+4. Request/response pairs are saved to a JSONL file
+
+### Visualization Model
+
+The viewer displays requests as a **dependency forest**:
+
+- Each node represents one LLM request
+- Edges show dependencies — a child request builds upon its parent's messages
+- Linear conversations appear as a single chain
+- Conversation rewinds or branches create forks
+- Unrelated conversations appear as separate trees
+
+## Tech Stack
+
+**Proxy Server**
+- Python 3.10+
+- Starlette (ASGI framework)
+- httpx (async HTTP client)
+- uvicorn (ASGI server)
+
+**Viewer**
+- React 19
+- Vite
+- Tailwind CSS v4
+
+## CLI Reference
+
+```bash
+# Start proxy server
+uv run llm-trace serve [OPTIONS]
+  --port      Port to listen on (default: 8080)
+  --output    Output file path (default: ./traces/trace.jsonl)
+  --target    Target API URL (default: https://api.openai.com)
+
+# Preprocess traces for visualization
+uv run llm-trace cook <input> [OPTIONS]
+  -o, --output    Output JSON file (default: ./viewer/public/data.json)
+```
+
+## License
+
+MIT
