@@ -36,6 +36,28 @@
   --duration-normal: 250ms;
 }
 
+/* Light Theme */
+[data-theme="light"] {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f6f8fa;
+  --color-bg-tertiary: #eaeef2;
+  --color-bg-elevated: #ffffff;
+  --color-border-default: #d0d7de;
+  --color-border-muted: #eaeef2;
+  --color-border-accent: #0969da;
+  --color-text-primary: #1f2328;
+  --color-text-secondary: #656d76;
+  --color-text-muted: #8c959f;
+  --color-role-system: #6e7781;
+  --color-role-user: #0969da;
+  --color-role-assistant: #1a7f37;
+  --color-role-tool-use: #8250df;
+  --color-role-tool-result: #9a6700;
+  --color-success: #1a7f37;
+  --color-warning: #9a6700;
+  --color-error: #cf222e;
+}
+
 @font-face {
   font-family: 'IBM Plex Sans';
   font-style: normal;

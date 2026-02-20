@@ -1,4 +1,5 @@
 import type { Request } from '../../types';
+import { ThemeToggle } from '../ThemeToggle';
 
 interface RequestHeaderProps {
   request: Request;
@@ -42,8 +43,13 @@ export function RequestHeader({ request }: RequestHeaderProps) {
           {formatTimestamp(request.timestamp)}
         </span>
 
+        {/* Theme Toggle */}
+        <div className="ml-auto">
+          <ThemeToggle />
+        </div>
+
         {/* Duration */}
-        <span className="ml-auto text-xs font-mono px-2 py-1 rounded bg-bg-tertiary text-text-secondary">
+        <span className="text-xs font-mono px-2 py-1 rounded bg-bg-tertiary text-text-secondary">
           {request.duration_ms}ms
         </span>
       </div>
