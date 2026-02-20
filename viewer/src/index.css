@@ -136,3 +136,13 @@ body {
 pre, code {
   font-family: var(--font-mono);
 }
+
+/* Graph row hover */
+.graph-row:hover {
+  background: var(--color-bg-elevated);
+}
+
+.graph-row-selected,
+.graph-row-selected:hover {
+  background: var(--color-bg-tertiary);
+}
