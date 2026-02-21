@@ -1,4 +1,4 @@
-import { useMemo, type ReactElement } from 'react';
+import { useMemo, useRef, useEffect, type ReactElement } from 'react';
 import type { Request, Message } from '../../types';
 import { buildRequestTree, type RequestTreeNode } from '../../utils/treeLayout';
 
@@ -320,9 +320,17 @@ interface GraphRowProps {
 }
 
 function GraphRow({ node, svgWidth, isSelected, onClick, getMessage }: GraphRowProps) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const cx = colX(node.column);
   const cy = ROW_HEIGHT / 2;
   const { request } = node;
+
+  // Auto-scroll to keep selected item visible
+  useEffect(() => {
+    if (isSelected && buttonRef.current) {
+      buttonRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [isSelected]);
 
   // Get the last message from request_messages
   const lastMessageId = request.request_messages[request.request_messages.length - 1];
@@ -332,6 +340,7 @@ function GraphRow({ node, svgWidth, isSelected, onClick, getMessage }: GraphRowP
 
   return (
     <button
+      ref={buttonRef}
       onClick={onClick}
       className={`graph-row w-full text-left transition-all duration-fast outline-none ${isSelected ? 'graph-row-selected bg-bg-tertiary' : ''
         }`}
