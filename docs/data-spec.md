@@ -350,9 +350,16 @@ The `cook` command transforms traces into a deduplicated, visualization-ready fo
   "id": "m0",
   "role": "system" | "user" | "assistant" | "tool_use" | "tool_result" | "thinking",
   "content": "string",
-  "tool_calls": [{"name": "...", "arguments": {...}}] | null
+  "tool_calls": [{"name": "...", "arguments": {...}, "id": "call_xxx"}] | null,
+  "tool_use_id": "call_xxx" | null,
+  "is_error": true | false | null
 }
 ```
+
+**Field Notes:**
+- `tool_calls[].id`: Tool use ID from the API (present for Claude and OpenAI tool calls)
+- `tool_use_id`: For `tool_result` messages, references the `tool_use` it responds to
+- `is_error`: For `tool_result` messages, indicates whether the tool execution failed
 
 ### CookedTool
 
@@ -439,14 +446,24 @@ Otherwise, it's treated as **OpenAI** format.
 |--------|--------|
 | OpenAI `function.name` | `name` |
 | OpenAI `function.arguments` (JSON string) | `arguments` (parsed to object) |
+| OpenAI `id` | `id` |
 | Claude `name` | `name` |
 | Claude `input` | `arguments` |
+| Claude `id` | `id` |
+
+### Tool Result Normalization
+
+| Source | Output |
+|--------|--------|
+| OpenAI `tool_call_id` | `tool_use_id` |
+| Claude `tool_use_id` | `tool_use_id` |
+| Claude `is_error` | `is_error` |
 
 ### Deduplication
 
 Messages and tools are deduplicated using SHA-256 hash (first 16 chars):
 
-- **Message hash**: `hash(role, content, tool_calls)`
+- **Message hash**: `hash(role, content, tool_calls, tool_use_id, is_error)`
 - **Tool hash**: `hash(name, description, parameters)`
 
 Identical messages/tools across requests share the same ID.
@@ -506,10 +523,10 @@ Claude content blocks are reconstructed and converted to the standard response f
 **Output Messages:**
 ```json
 [
-  {"id": "m0", "role": "system", "content": "Be helpful", "tool_calls": null},
-  {"id": "m1", "role": "user", "content": "What's 2+2?", "tool_calls": null},
-  {"id": "m2", "role": "tool_use", "content": "", "tool_calls": [{"name": "calc", "arguments": {"expr": "2+2"}}]},
-  {"id": "m3", "role": "tool_result", "content": "4", "tool_calls": null}
+  {"id": "m0", "role": "system", "content": "Be helpful", "tool_calls": null, "tool_use_id": null, "is_error": null},
+  {"id": "m1", "role": "user", "content": "What's 2+2?", "tool_calls": null, "tool_use_id": null, "is_error": null},
+  {"id": "m2", "role": "tool_use", "content": "", "tool_calls": [{"name": "calc", "arguments": {"expr": "2+2"}, "id": "call_abc"}], "tool_use_id": null, "is_error": null},
+  {"id": "m3", "role": "tool_result", "content": "4", "tool_calls": null, "tool_use_id": "call_abc", "is_error": false}
 ]
 ```
 
@@ -537,11 +554,11 @@ Claude content blocks are reconstructed and converted to the standard response f
 **Output Messages:**
 ```json
 [
-  {"id": "m0", "role": "system", "content": "Be helpful", "tool_calls": null},
-  {"id": "m1", "role": "user", "content": "What's 2+2?", "tool_calls": null},
-  {"id": "m2", "role": "thinking", "content": "Simple math question", "tool_calls": null},
-  {"id": "m3", "role": "tool_use", "content": "", "tool_calls": [{"name": "calc", "arguments": {"expr": "2+2"}}]},
-  {"id": "m4", "role": "tool_result", "content": "4", "tool_calls": null}
+  {"id": "m0", "role": "system", "content": "Be helpful", "tool_calls": null, "tool_use_id": null, "is_error": null},
+  {"id": "m1", "role": "user", "content": "What's 2+2?", "tool_calls": null, "tool_use_id": null, "is_error": null},
+  {"id": "m2", "role": "thinking", "content": "Simple math question", "tool_calls": null, "tool_use_id": null, "is_error": null},
+  {"id": "m3", "role": "tool_use", "content": "", "tool_calls": [{"name": "calc", "arguments": {"expr": "2+2"}, "id": "call_1"}], "tool_use_id": null, "is_error": null},
+  {"id": "m4", "role": "tool_result", "content": "4", "tool_calls": null, "tool_use_id": "call_1", "is_error": false}
 ]
 ```
 
