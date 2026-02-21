@@ -255,7 +255,7 @@ function GraphRow({ node, svgWidth, isSelected, onClick, getMessage }: GraphRowP
   return (
     <button
       onClick={onClick}
-      className={`graph-row w-full text-left transition-all duration-fast ${isSelected ? 'graph-row-selected bg-bg-tertiary' : ''
+      className={`graph-row w-full text-left transition-all duration-fast outline-none ${isSelected ? 'graph-row-selected bg-bg-tertiary' : ''
         }`}
       style={{
         display: 'flex',

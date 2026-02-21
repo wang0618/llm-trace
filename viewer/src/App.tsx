@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTraceData } from './hooks/useTraceData';
 import { Layout } from './components/layout/Layout';
 import { RequestList } from './components/sidebar/RequestList';
@@ -8,10 +8,48 @@ function App() {
   const { data, loading, error, getMessage, getTool, getRequest } = useTraceData();
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
 
+  // Sort requests by timestamp (same order as RequestGraph displays)
+  const sortedRequestIds = useMemo(() => {
+    if (!data) return [];
+    return [...data.requests]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((r) => r.id);
+  }, [data]);
+
   // Auto-select first request when data loads
-  if (data && !selectedRequestId && data.requests.length > 0) {
-    setSelectedRequestId(data.requests[0].id);
+  if (data && !selectedRequestId && sortedRequestIds.length > 0) {
+    setSelectedRequestId(sortedRequestIds[0]);
   }
+
+  // Keyboard navigation for up/down arrow keys
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (sortedRequestIds.length === 0 || !selectedRequestId) return;
+
+      // Skip if user is focused on an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const currentIndex = sortedRequestIds.indexOf(selectedRequestId);
+      if (currentIndex === -1) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.preventDefault();
+        const nextIndex = Math.min(currentIndex + 1, sortedRequestIds.length - 1);
+        setSelectedRequestId(sortedRequestIds[nextIndex]);
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        e.preventDefault();
+        const prevIndex = Math.max(currentIndex - 1, 0);
+        setSelectedRequestId(sortedRequestIds[prevIndex]);
+      }
+    },
+    [sortedRequestIds, selectedRequestId],
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   const selectedRequest = selectedRequestId ? getRequest(selectedRequestId) : null;
 
