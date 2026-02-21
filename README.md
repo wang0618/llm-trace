@@ -1,6 +1,14 @@
-# LLM Path
+ <h1 align="center">LLM Path</h1>
+<p align="center">
+    <em>A lightweight tool for tracing LLM API requests.</em>
+</p>
 
-A lightweight tool for tracing LLM API requests — intercept, record, and visualize your LLM application's behavior.
+
+<p align="center">
+  <img src="./docs/images/screenshot.jpeg" alt="Screenshot" width="800"/>
+  <br/>
+  Trace demo: <a href="https://wang0618.github.io/llm-path/?data=nanobot.json" target="_blank">[nanobot]</a>, <a href="https://wang0618.github.io/llm-path/?data=claude-code.json" target="_blank">[claude code]</a>
+</p>
 
 ## Features
 
