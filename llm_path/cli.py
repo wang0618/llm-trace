@@ -68,14 +68,14 @@ def main():
     proxy_parser.add_argument(
         "--output",
         type=str,
-        default="./traces/trace.jsonl",
-        help="Output JSONL file path (default: ./traces/trace.jsonl)",
+        required=True,
+        help="Output JSONL file path",
     )
     proxy_parser.add_argument(
         "--target",
         type=str,
-        default=DEFAULT_TARGET_URL,
-        help=f"Target API URL (default: {DEFAULT_TARGET_URL})",
+        required=True,
+        help="LLM Provider API URL",
     )
 
     # cook subcommand (new functionality)

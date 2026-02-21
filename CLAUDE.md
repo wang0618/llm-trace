@@ -5,11 +5,14 @@ A tool for tracing LLM requests - intercepts API calls and saves them for debugg
 ## Quick Reference
 
 ```bash
-# Start proxy server
-uv run llm-path proxy --port 8080 --output ./traces/trace.jsonl
+# Start proxy server (--output and --target are required)
+llm-path proxy --port 8080 --target https://api.openai.com --output ./traces/trace.jsonl
 
 # Preprocess traces for visualization
-uv run llm-path cook ./traces/trace.jsonl -o ./viewer/public/data.json
+llm-path cook ./traces/trace.jsonl -o ./viewer/public/data.json
+
+# Visualize traces (starts web server, auto-cooks if needed)
+llm-path viewer trace.jsonl
 
 # Install Python dependencies
 uv sync
@@ -18,10 +21,10 @@ uv sync
 uv run ruff check llm_path/
 uv run ruff format llm_path/
 
-# Run viewer (React)
+# Run viewer dev mode (React)
 cd viewer && npm install && npm run dev
 
-# load data from custom path
+# Load data from custom path in viewer
 open http://localhost:port/?data=path/to/other.json
 ```
 
@@ -30,10 +33,11 @@ open http://localhost:port/?data=path/to/other.json
 ```
 llm-path/
 ├── llm_path/           # Main package
-│   ├── cli.py           # CLI entry point (subcommands: proxy, cook)
+│   ├── cli.py           # CLI entry point (subcommands: proxy, cook, viewer)
 │   ├── cook.py          # Trace preprocessing for visualization
 │   ├── proxy.py         # Proxy server (Starlette + httpx)
 │   ├── storage.py       # JSONL append-only storage
+│   ├── viewer.py        # Viewer server (serves React app + data)
 │   └── models.py        # TraceRecord dataclass
 ├── viewer/              # React trace viewer (Vite + Tailwind)
 │   ├── src/components/  # React components (detail/, sidebar/, diff/, layout/)
@@ -59,7 +63,7 @@ llm-path/
 ### Proxy Flow
 
 1. Client sends request to `localhost:8080/v1/...`
-2. Proxy forwards to target API (default: OpenAI)
+2. Proxy forwards to target API (specified via `--target`)
 3. Response is streamed back (if SSE) or returned whole
 4. Request/response pair saved to JSONL
 
@@ -107,6 +111,16 @@ See `docs/request-dependency.md` for algorithm details.
 - **Dark/light theme**: Toggle via ThemeProvider
 - **Collapsible content**: Messages and tool descriptions collapse for readability
 
+### Visualization Model
+
+The viewer displays requests as a **dependency forest**:
+
+- Each node represents one LLM request
+- Edges show dependencies — a child request builds upon its parent's messages
+- Linear conversations appear as a single chain
+- Conversation rewinds or branches create forks
+- Unrelated conversations appear as separate trees
+
 ## Conventions
 
 - Type hints on all functions
@@ -125,6 +139,3 @@ See `docs/request-dependency.md` for algorithm details.
 
 TODO: Set up pytest
 
-## Commit Rules
-
-Run `/commit` after completing tasks.
