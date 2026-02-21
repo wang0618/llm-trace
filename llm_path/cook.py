@@ -881,13 +881,7 @@ class TraceCooker:
         if not same_model_candidates:
             return None  # No same-model candidate, become new root
 
-        # Optimization: check prefix relationship first (from most recent)
-        for c in reversed(same_model_candidates):
-            expected_prefix = self._build_expected_prefix(c)
-            if self._is_prefix(expected_prefix, curr.request_messages):
-                return c.id
-
-        # Fallback: use combined score to find most similar parent
+        # Use combined score to find most similar parent
         best_score = float("-inf")
         best_parent_id = None
 

@@ -92,7 +92,7 @@ The `cook` command transforms raw JSONL traces into visualization-ready JSON:
   - Claude thinking blocks → separate `thinking` messages
 - **Response messages**: Each request has `response_messages` (array) to support multiple response parts (e.g., thinking + assistant)
 - **Request dependency analysis**: Builds a dependency forest (not linear chain) by:
-  - Using prefix matching and Levenshtein distance for parent detection
+  - Using Levenshtein distance for parent detection
   - Filtering by model (no cross-model dependencies)
   - Applying tool difference penalties to match scores
   - Creating new roots when match score is below threshold

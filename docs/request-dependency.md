@@ -32,9 +32,8 @@
 
 1. 按时间戳排序，保证 parent 一定出现在当前请求之前
 2. **过滤候选**：跳过 model 不同的请求（不同模型间无依赖关系）
-3. 优先检查前缀关系（精确匹配）
-4. 若无精确匹配，使用综合得分（消息编辑距离 + 工具相似度）找最相似的 parent
-5. **森林支持**：如果最佳得分低于阈值，则成为新的根节点
+3. 使用综合得分（消息编辑距离 + 工具相似度）找最相似的 parent
+4. **森林支持**：如果最佳得分低于阈值，则成为新的根节点
 
 ### 得分计算
 
@@ -92,13 +91,7 @@ def find_parent(curr, candidates):
     if not same_model_candidates:
         return None  # 没有相同 model 的候选，成为新根
 
-    # 优化：优先检查前缀关系（从最近的开始找）
-    for c in reversed(same_model_candidates):
-        expected_prefix = build_expected_prefix(c)
-        if is_prefix(expected_prefix, curr.request_messages):
-            return c.id
-
-    # 回退：使用综合得分找最相似的 parent
+    # 使用综合得分找最相似的 parent
     best_score = float('-inf')
     best_parent_id = None
 
@@ -147,13 +140,6 @@ def build_expected_prefix(candidate):
     if candidate.response_message is not None:
         prefix.append(candidate.response_message)
     return prefix
-
-
-def is_prefix(prefix, messages):
-    """检查 prefix 是否为 messages 的前缀"""
-    if len(prefix) > len(messages):
-        return False
-    return messages[:len(prefix)] == prefix
 
 
 def levenshtein(a, b):
