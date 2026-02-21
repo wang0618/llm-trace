@@ -29,13 +29,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Download trace data
-        run: |
-          mkdir -p traces
-          curl -fsSL -o traces/claude-code.jsonl "https://gist.github.com/wang0618/f214892316df955558d635088e4231cc/raw/c4d0d9cf5f581ab739b0298c2ab4da900018ade7/claude-code.jsonl"
+      - name: Clone sample data
+        run: git clone --depth 1 https://github.com/wang0618/llm-trace-sample-data.git sample-data
 
       - name: Cook trace data
-        run: uv run llm-trace cook traces/claude-code.jsonl -o viewer/public/data.json
+        run: |
+          for file in sample-data/*.jsonl; do
+            filename=$(basename "$file" .jsonl)
+            uv run llm-trace cook "$file" -o "viewer/public/${filename}.json"
+          done
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
