@@ -10,6 +10,11 @@ interface UseTraceDataResult {
   getRequest: (id: string) => Request | undefined;
 }
 
+function getDataUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('data') || 'data.json';
+}
+
 export function useTraceData(): UseTraceDataResult {
   const [data, setData] = useState<TraceData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,10 +22,11 @@ export function useTraceData(): UseTraceDataResult {
 
   useEffect(() => {
     async function loadData() {
+      const dataUrl = getDataUrl();
       try {
-        const response = await fetch('data.json');
+        const response = await fetch(dataUrl);
         if (!response.ok) {
-          throw new Error(`Failed to load data: ${response.status}`);
+          throw new Error(`Failed to load data from ${dataUrl}: ${response.status}`);
         }
         const json = await response.json();
         setData(json);
