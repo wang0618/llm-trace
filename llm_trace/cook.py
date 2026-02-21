@@ -19,6 +19,7 @@ class CookedMessage:
     content: str
     tool_calls: list[dict] | None = None  # Each has: name, arguments, id (optional)
     tool_use_id: str | None = None  # For tool_result: references the tool_use it responds to
+    is_error: bool | None = None  # For tool_result: whether the tool execution failed
 
 
 @dataclass
@@ -63,7 +64,11 @@ class CookedOutput:
 
 
 def _compute_message_hash(
-    role: str, content: str, tool_calls: list[dict] | None, tool_use_id: str | None = None
+    role: str,
+    content: str,
+    tool_calls: list[dict] | None,
+    tool_use_id: str | None = None,
+    is_error: bool | None = None,
 ) -> str:
     """Compute stable hash for message deduplication."""
     data = {
@@ -71,6 +76,7 @@ def _compute_message_hash(
         "content": content,
         "tool_calls": tool_calls,
         "tool_use_id": tool_use_id,
+        "is_error": is_error,
     }
     json_str = json.dumps(data, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(json_str.encode()).hexdigest()[:16]
@@ -398,13 +404,16 @@ class TraceCooker:
         content: str,
         tool_calls: list[dict] | None,
         tool_use_id: str | None = None,
+        is_error: bool | None = None,
     ) -> str:
         """Get existing message ID or create new message, returns ID."""
         mapped_role = _map_role(role, tool_calls)
         parsed_tool_calls = _parse_tool_calls(tool_calls)
         content = content or ""
 
-        msg_hash = _compute_message_hash(mapped_role, content, parsed_tool_calls, tool_use_id)
+        msg_hash = _compute_message_hash(
+            mapped_role, content, parsed_tool_calls, tool_use_id, is_error
+        )
 
         if msg_hash in self.message_hash_to_id:
             return self.message_hash_to_id[msg_hash]
@@ -418,6 +427,7 @@ class TraceCooker:
             content=content,
             tool_calls=parsed_tool_calls,
             tool_use_id=tool_use_id,
+            is_error=is_error,
         )
         self.messages.append(msg)
         self.message_hash_to_id[msg_hash] = msg_id
@@ -632,10 +642,15 @@ class TraceCooker:
                         b.get("text", str(b)) if isinstance(b, dict) else str(b)
                         for b in result_content
                     )
-                # Extract tool_use_id reference
+                # Extract tool_use_id reference and error status
                 tool_use_id = block.get("tool_use_id")
+                is_error = block.get("is_error")
                 msg_id = self._get_or_create_message(
-                    "tool_result", str(result_content), None, tool_use_id=tool_use_id
+                    "tool_result",
+                    str(result_content),
+                    None,
+                    tool_use_id=tool_use_id,
+                    is_error=is_error,
                 )
                 msg_ids.append(msg_id)
 

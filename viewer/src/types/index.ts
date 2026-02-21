@@ -10,6 +10,7 @@ export interface Message {
   content: string;
   tool_calls?: ToolCall[];
   tool_use_id?: string;  // For tool_result: references the tool_use it responds to
+  is_error?: boolean;    // For tool_result: whether the tool execution failed
 }
 
 export interface Tool {

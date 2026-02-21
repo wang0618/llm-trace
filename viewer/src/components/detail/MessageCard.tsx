@@ -76,6 +76,16 @@ export function MessageCard({ message, isExpanded = false, onToggleExpand }: Mes
         <span className={`text-xs font-mono font-medium uppercase ${config.colorClass}`}>
           {config.label}
         </span>
+        {/* Show error status for tool_result messages */}
+        {message.role === 'tool_result' && message.is_error !== undefined && (
+          <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${
+            message.is_error
+              ? 'bg-red-500/20 text-red-600 dark:text-red-400'
+              : 'bg-green-500/20 text-green-600 dark:text-green-400'
+          }`}>
+            {message.is_error ? 'error' : 'success'}
+          </span>
+        )}
         {/* Show tool_use_id for tool_result messages */}
         {message.tool_use_id && (
           <code className="px-1.5 py-0.5 text-xs font-mono text-text-muted rounded">
