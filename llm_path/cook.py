@@ -383,6 +383,10 @@ def _detect_api_format(record: dict) -> str:
                 ):
                     return "claude"
 
+    # Gemini indicators
+    if "contents" in request or "candidates" in response:
+        return "gemini"
+
     return "openai"
 
 
@@ -789,6 +793,163 @@ class TraceCooker:
             duration_ms=duration_ms,
         )
 
+    # ========== Gemini API format processing methods ==========
+
+    def _process_gemini_parts(self, parts: list[dict]) -> tuple[str, list[dict]]:
+        """Extract text content and tool calls from Gemini parts."""
+        text_parts = []
+        tool_calls = []
+
+        for part in parts:
+            if "text" in part:
+                text_parts.append(part["text"])
+            elif "functionCall" in part:
+                fc = part["functionCall"]
+                tool_calls.append({
+                    "name": fc.get("name", ""),
+                    "arguments": fc.get("args", {}),
+                    # Gemini doesn't use explicit IDs for calls, generate one or leave empty
+                    "id": "", 
+                })
+        
+        return "".join(text_parts), tool_calls
+
+    def _process_gemini_request_messages(self, contents: list[dict]) -> list[str]:
+        """Process Gemini request contents."""
+        msg_ids = []
+        for content in contents:
+            role = content.get("role", "user")
+            parts = content.get("parts", [])
+            
+            # Map Gemini roles to standard roles
+            if role == "model":
+                role = "assistant"
+            
+            text, tool_calls = self._process_gemini_parts(parts)
+            
+            # Check for functionResponse (tool_result)
+            tool_results = [p for p in parts if "functionResponse" in p]
+            if tool_results:
+                for tr in tool_results:
+                    fr = tr["functionResponse"]
+                    # Gemini functionResponse: { name: "...", response: {...} }
+                    result_content = json.dumps(fr.get("response", {}), ensure_ascii=False)
+                    msg_id = self._get_or_create_message(
+                        "tool_result", 
+                        result_content, 
+                        None,
+                        # No explicit ID linking in Gemini REST API usually
+                        tool_use_id=None 
+                    )
+                    msg_ids.append(msg_id)
+            else:
+                # Normal message or tool use
+                if tool_calls:
+                    # If mixed text and tool calls, add text first
+                    if text:
+                        msg_ids.append(self._get_or_create_message(role, text, None))
+                    msg_ids.append(self._get_or_create_message("tool_use", "", tool_calls))
+                else:
+                    msg_ids.append(self._get_or_create_message(role, text, None))
+                    
+        return msg_ids
+
+    def _process_gemini_response(self, candidates: list[dict] | None) -> list[str]:
+        """Process Gemini response candidates."""
+        if not candidates:
+            return [self._get_or_create_message("assistant", "", None)]
+
+        candidate = candidates[0]
+        content = candidate.get("content", {})
+        parts = content.get("parts", [])
+        
+        text, tool_calls = self._process_gemini_parts(parts)
+        
+        msg_ids = []
+        if text:
+            msg_ids.append(self._get_or_create_message("assistant", text, None))
+        if tool_calls:
+            msg_ids.append(self._get_or_create_message("tool_use", "", tool_calls))
+            
+        if not msg_ids:
+             msg_ids.append(self._get_or_create_message("assistant", "", None))
+             
+        return msg_ids
+
+    def _process_gemini_tools(self, tools: list[dict] | None) -> list[str]:
+        """Process Gemini tool declarations."""
+        if not tools:
+            return []
+            
+        tool_ids = []
+        # Gemini tools structure: [{ "functionDeclarations": [...] }]
+        for tool_group in tools:
+            funcs = tool_group.get("function_declarations", []) # API uses snake_case often
+            if not funcs:
+                funcs = tool_group.get("functionDeclarations", []) # Or camelCase
+                
+            for func in funcs:
+                name = func.get("name", "")
+                description = func.get("description", "")
+                parameters = func.get("parameters", {})
+                
+                tool_id = self._get_or_create_tool(name, description, parameters)
+                tool_ids.append(tool_id)
+                
+        return tool_ids
+
+    def _process_record_gemini(self, record: dict) -> CookedRequest:
+        """Process a single Gemini API trace record."""
+        # Request structure: { contents: [...], tools: [...] }
+        request_body = record.get("request", {})
+        if "contents" not in request_body and "contents" in record:
+             # Sometimes the record IS the request body if captured raw
+             request_body = record
+             
+        # Response structure: { candidates: [...] }
+        response_body = record.get("response", {})
+        
+        # Process request messages
+        contents = request_body.get("contents", [])
+        request_msg_ids = self._process_gemini_request_messages(contents)
+        
+        # Process response messages
+        candidates = response_body.get("candidates", [])
+        response_msg_ids = self._process_gemini_response(candidates)
+        
+        # Process tools
+        tools = request_body.get("tools", [])
+        tool_ids = self._process_gemini_tools(tools)
+        
+        # Metadata
+        record_id = record.get("id", "")
+        # Gemini timestamps might be absent or different, fallback to current if missing
+        timestamp = _iso_to_unix_ms(record.get("timestamp", "")) 
+        
+        # Try to find model in various locations
+        model = record.get("model", "") # Top level
+        
+        if not model:
+             # Try response metadata (modelVersion)
+             model = response_body.get("modelVersion", "")
+             
+        if not model:
+            # Fallback
+            model = "gemini-pro"
+            
+        duration_ms = record.get("duration_ms", 0)
+
+        return CookedRequest(
+            id=record_id,
+            parent_id=None,
+            timestamp=timestamp,
+            request_messages=request_msg_ids,
+            response_messages=response_msg_ids,
+            model=model,
+            tools=tool_ids,
+            duration_ms=duration_ms,
+        )
+
     def _process_record(self, record: dict, api_format: str = "auto") -> CookedRequest:
         """Process a single trace record, returns CookedRequest (parent_id not set)."""
         # Determine format
@@ -800,6 +961,8 @@ class TraceCooker:
         # Dispatch to format-specific handler
         if detected_format == "claude":
             return self._process_record_claude(record)
+        elif detected_format == "gemini":
+            return self._process_record_gemini(record)
 
         # OpenAI format (default)
         request = record.get("request", {})
