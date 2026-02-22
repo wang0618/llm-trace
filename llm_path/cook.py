@@ -884,27 +884,14 @@ class TraceCooker:
                     msg_ids.append(msg_id)
             else:
                 # Normal message or tool use
-            if tool_results:
-                for tr in tool_results:
-                    fr = tr["functionResponse"]
-                    # Gemini functionResponse: { name: "...", response: {...} }
-                    result_content = json.dumps(fr.get("response", {}), ensure_ascii=False)
-                    msg_id = self._get_or_create_message(
-                        "tool_result", 
-                        result_content, 
-                        None,
-                        # No explicit ID linking in Gemini REST API usually
-                        tool_use_id=None 
-                    )
-                    msg_ids.append(msg_id)
-            else:
-                # Normal message or tool use
                 if tool_calls:
                     # If mixed text and tool calls, add text first
                     if text:
                         msg_ids.append(self._get_or_create_message(role, text, None))
                     msg_ids.append(self._get_or_create_message("tool_use", "", tool_calls))
                 else:
+                    # Ensure we always create a message even if text is empty (unless it's purely tool calls which is handled above)
+                    # For user messages, we want the text content to be present for the summary.
                     msg_ids.append(self._get_or_create_message(role, text, None))
                     
         return msg_ids
@@ -984,7 +971,12 @@ class TraceCooker:
         record_id = record.get("id", "")
         # Gemini timestamps might be absent or different, fallback to current if missing
         timestamp = _iso_to_unix_ms(record.get("timestamp", "")) 
-        
+        if timestamp == 0:
+            # Try to get timestamp from filename or just use current time if really missing
+            # But here we don't have filename access. Let's try another field if exists.
+            # Some traces might have 'startTime'
+            pass
+
         # Try to find model in various locations
         model = record.get("model", "") # Top level
         
