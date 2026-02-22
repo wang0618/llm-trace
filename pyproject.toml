@@ -5,7 +5,7 @@ description = "A tool for tracing LLM requests"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "httpx>=0.27.0",
+    "httpx[socks]>=0.27.0",
     "starlette>=0.36.0",
     "uvicorn>=0.27.0",
 ]
